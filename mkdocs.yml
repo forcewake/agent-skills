@@ -1,0 +1,74 @@
+site_name: agent-skills
+site_description: Curated Agent Skills for coding agents, packaged as an APM skill collection
+site_url: https://forcewake.github.io/agent-skills/
+repo_url: https://github.com/forcewake/agent-skills
+repo_name: forcewake/agent-skills
+edit_uri: edit/main/
+
+theme:
+  name: material
+  icon:
+    logo: material/robot-happy
+    repo: fontawesome/brands/github
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.magiclink
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+plugins:
+  - search
+  - gen-files:
+      scripts:
+        - gen_pages.py
+
+nav:
+  - Home: index.md
+  - Skills:
+      - mkdocs-material:
+          - skills/mkdocs-material/index.md
+          - GitHub Pages recipes: skills/mkdocs-material/references/github-pages.md

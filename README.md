@@ -2,6 +2,8 @@
 
 A curated collection of [Agent Skills](https://agentskills.io) for coding agents, packaged as an [APM](https://github.com/microsoft/apm) skill collection. Each skill lives in `skills/<name>/` with its own `SKILL.md`.
 
+**Documentation site:** https://forcewake.github.io/agent-skills/
+
 ## Skills
 
 | Skill | Description |

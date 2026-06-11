@@ -1,0 +1,2 @@
+mkdocs-material>=9.5
+mkdocs-gen-files>=0.5
