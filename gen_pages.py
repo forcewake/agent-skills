@@ -18,12 +18,15 @@ def reject_unsafe_path(path):
 def require_secure_descriptor_support():
     required_constants = ("O_DIRECTORY", "O_NOFOLLOW", "O_NONBLOCK")
     missing_constants = [name for name in required_constants if not hasattr(os, name)]
-    required_functions = (os.stat, os.listdir)
-    missing_functions = [
-        function.__name__ for function in required_functions if function not in os.supports_dir_fd and function not in os.supports_fd
-    ]
-    if missing_constants or missing_functions:
-        missing = ", ".join(missing_constants + missing_functions)
+    required_capabilities = (
+        ("os.open(dir_fd)", os.open in os.supports_dir_fd),
+        ("os.stat(dir_fd)", os.stat in os.supports_dir_fd),
+        ("os.listdir(fd)", os.listdir in os.supports_fd),
+        ("os.stat(follow_symlinks=False)", os.stat in os.supports_follow_symlinks),
+    )
+    missing_capabilities = [label for label, supported in required_capabilities if not supported]
+    if missing_constants or missing_capabilities:
+        missing = ", ".join(missing_constants + missing_capabilities)
         raise RuntimeError(
             "Secure descriptor-anchored skill reads require openat-style no-follow support; unavailable: " + missing
         )

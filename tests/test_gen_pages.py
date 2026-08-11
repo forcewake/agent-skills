@@ -77,8 +77,11 @@ def run_raced_generator(root_string, source_string, replacement, result_queue):
         return original_open(path, flags, mode, dir_fd=dir_fd)
 
     fake = FakeMkdocsGenFiles()
+    patched_dir_fd_support = frozenset(
+        open_after_replacement if function is original_open else function for function in os.supports_dir_fd
+    )
     try:
-        with patch.object(os, "open", open_after_replacement):
+        with patch.object(os, "open", open_after_replacement), patch.object(os, "supports_dir_fd", patched_dir_fd_support):
             run_generator(root, fake)
     except BaseException as error:
         result_queue.put(("raised", type(error).__name__, str(error), fake.writes, replaced))
@@ -108,6 +111,38 @@ class GenerateSkillPagesTests(unittest.TestCase):
             self.fail("generator did not finish within 5 seconds")
         self.assertEqual(process.exitcode, 0)
         return results.get(timeout=1)
+
+    def assert_missing_descriptor_capability_fails_closed(self, support_attribute, unsupported_function, capability_label):
+        original_support = getattr(os, support_attribute)
+        replacement_support = frozenset(function for function in original_support if function is not unsupported_function)
+        with TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / "skills").mkdir()
+            fake = FakeMkdocsGenFiles()
+
+            with patch.object(os, support_attribute, replacement_support):
+                with self.assertRaises(RuntimeError) as error:
+                    run_generator(root, fake)
+
+            self.assertIn(capability_label, str(error.exception))
+            self.assertEqual(fake.writes, {})
+            self.assertEqual(fake.write_order, [])
+            self.assertEqual(fake.edit_paths, [])
+        self.assertIs(getattr(os, support_attribute), original_support)
+
+    def test_fails_closed_when_open_lacks_dir_fd_support(self):
+        self.assert_missing_descriptor_capability_fails_closed("supports_dir_fd", os.open, "os.open(dir_fd)")
+
+    def test_fails_closed_when_stat_lacks_dir_fd_support(self):
+        self.assert_missing_descriptor_capability_fails_closed("supports_dir_fd", os.stat, "os.stat(dir_fd)")
+
+    def test_fails_closed_when_stat_lacks_follow_symlinks_support(self):
+        self.assert_missing_descriptor_capability_fails_closed(
+            "supports_follow_symlinks", os.stat, "os.stat(follow_symlinks=False)"
+        )
+
+    def test_fails_closed_when_listdir_lacks_fd_support(self):
+        self.assert_missing_descriptor_capability_fails_closed("supports_fd", os.listdir, "os.listdir(fd)")
 
     def test_publishes_recursive_references_and_assets_with_skill_frontmatter_removed(self):
         with TemporaryDirectory() as temporary_directory:
