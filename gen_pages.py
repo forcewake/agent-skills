@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 import stat
+import unicodedata
 
 import mkdocs_gen_files
 
@@ -15,6 +16,16 @@ def reject_unsafe_path(path):
     raise ValueError(f"Unsafe skill path: {path}")
 
 
+def is_public_url_unsafe_character(character):
+    """Return whether a Unicode character is unsafe in raw public URL metadata."""
+    code_point = ord(character)
+    return (
+        unicodedata.category(character) in ("Cc", "Cf", "Cs")
+        or 0xFDD0 <= code_point <= 0xFDEF
+        or (code_point & 0xFFFF) in (0xFFFE, 0xFFFF)
+    )
+
+
 def repository_relative_source_path(*components):
     """Build a portable source path from validated lexical repository components."""
     if not components:
@@ -22,7 +33,9 @@ def repository_relative_source_path(*components):
     for component in components:
         if not isinstance(component, str) or not component or component in (".", ".."):
             reject_unsafe_path(component)
-        if "/" in component or "\\" in component:
+        if any(is_public_url_unsafe_character(character) for character in component):
+            reject_unsafe_path(component)
+        if any(character in component for character in ("/", "\\", "?", "#", "%", ":")):
             reject_unsafe_path(component)
     source_path = "/".join(components)
     if source_path.startswith("/") or ".." in source_path.split("/"):

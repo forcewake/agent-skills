@@ -36,7 +36,7 @@ class FakeMkdocsGenFiles(types.ModuleType):
         return buffer
 
     def set_edit_path(self, page, source):
-        self.edit_paths.append((str(page), Path(source)))
+        self.edit_paths.append((str(page), str(source)))
 
 
 def run_generator(cwd, fake_mkdocs=None):
@@ -168,8 +168,8 @@ class GenerateSkillPagesTests(unittest.TestCase):
             self.assertEqual(
                 fake.edit_paths,
                 [
-                    ("skills/example/index.md", Path("skills/example/SKILL.md")),
-                    ("skills/example/references/nested/guide.md", Path("skills/example/references/nested/guide.md")),
+                    ("skills/example/index.md", "skills/example/SKILL.md"),
+                    ("skills/example/references/nested/guide.md", "skills/example/references/nested/guide.md"),
                 ],
             )
 
@@ -189,15 +189,15 @@ class GenerateSkillPagesTests(unittest.TestCase):
             self.assertEqual(
                 fake.edit_paths,
                 [
-                    ("skills/example/index.md", Path("skills/example/SKILL.md")),
-                    ("skills/example/references/nested/guide.md", Path("skills/example/references/nested/guide.md")),
-                    ("skills/example/assets/notes.md", Path("skills/example/assets/notes.md")),
+                    ("skills/example/index.md", "skills/example/SKILL.md"),
+                    ("skills/example/references/nested/guide.md", "skills/example/references/nested/guide.md"),
+                    ("skills/example/assets/notes.md", "skills/example/assets/notes.md"),
                 ],
             )
             for _, source in fake.edit_paths:
-                self.assertFalse(source.is_absolute())
-                self.assertNotIn("..", source.parts)
-                self.assertEqual(source.as_posix(), str(source))
+                self.assertFalse(source.startswith("/"))
+                self.assertNotIn("..", source.split("/"))
+                self.assertEqual(source, source.replace("\\", "/"))
 
     def test_accepts_skills_without_optional_resource_roots(self):
         with TemporaryDirectory() as temporary_directory:
@@ -207,7 +207,90 @@ class GenerateSkillPagesTests(unittest.TestCase):
             fake, _ = run_generator(root)
 
             self.assertEqual(fake.writes, {"skills/example/index.md": b"# Example\n"})
-            self.assertEqual(fake.edit_paths, [("skills/example/index.md", Path("skills/example/SKILL.md"))])
+            self.assertEqual(fake.edit_paths, [("skills/example/index.md", "skills/example/SKILL.md")])
+
+    def test_rejects_ambiguous_skill_name_components_without_output(self):
+        unsafe_components = ("line\nbreak", "del\x7fbreak", "query?x", "fragment#x", "%2e%2e", "C:")
+        for component in unsafe_components:
+            with self.subTest(component=repr(component)), TemporaryDirectory() as temporary_directory:
+                root = Path(temporary_directory)
+                try:
+                    self.make_skill(root, name=component)
+                except OSError:
+                    _, generator_globals = run_generator(root)
+                    with self.assertRaises(ValueError):
+                        generator_globals["repository_relative_source_path"]("skills", component, "SKILL.md")
+                    continue
+
+                fake = FakeMkdocsGenFiles()
+                with self.assertRaises(ValueError):
+                    run_generator(root, fake)
+                self.assertEqual(fake.writes, {})
+                self.assertEqual(fake.write_order, [])
+                self.assertEqual(fake.edit_paths, [])
+
+    def test_rejects_ambiguous_nested_resource_components_without_output(self):
+        unsafe_components = ("line\nbreak", "del\x7fbreak", "query?x", "fragment#x", "%2e%2e", "C:")
+        for component in unsafe_components:
+            with self.subTest(component=repr(component)), TemporaryDirectory() as temporary_directory:
+                root = Path(temporary_directory)
+                skill_dir = self.make_skill(root)
+                resource = skill_dir / "references" / "nested" / component
+                try:
+                    resource.parent.mkdir(parents=True)
+                    resource.write_text("# unsafe\n", encoding="utf-8")
+                except OSError:
+                    _, generator_globals = run_generator(root)
+                    with self.assertRaises(ValueError):
+                        generator_globals["repository_relative_source_path"](
+                            "skills", "example", "references", "nested", component
+                        )
+                    continue
+
+                fake = FakeMkdocsGenFiles()
+                with self.assertRaises(ValueError):
+                    run_generator(root, fake)
+                self.assertEqual(fake.writes, {})
+                self.assertEqual(fake.write_order, [])
+                self.assertEqual(fake.edit_paths, [])
+
+    def test_preflights_all_skills_when_later_path_component_is_ambiguous(self):
+        for invalid_kind in ("skill", "resource"):
+            with self.subTest(invalid_kind=invalid_kind), TemporaryDirectory() as temporary_directory:
+                root = Path(temporary_directory)
+                self.make_skill(root, name="a-valid")
+                if invalid_kind == "skill":
+                    self.make_skill(root, name="z-query?x")
+                else:
+                    invalid_skill = self.make_skill(root, name="z-invalid")
+                    invalid_resource = invalid_skill / "references" / "query?x"
+                    invalid_resource.parent.mkdir()
+                    invalid_resource.write_text("# unsafe\n", encoding="utf-8")
+
+                fake = FakeMkdocsGenFiles()
+                with self.assertRaises(ValueError):
+                    run_generator(root, fake)
+                self.assertEqual(fake.writes, {})
+                self.assertEqual(fake.write_order, [])
+                self.assertEqual(fake.edit_paths, [])
+
+    def test_accepts_unicode_path_components_that_are_not_controls_or_formats(self):
+        with TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            skill_dir = self.make_skill(root, name="café-資料")
+            resource = skill_dir / "references" / "naïve-資料.md"
+            resource.parent.mkdir()
+            resource.write_text("# Guide\n", encoding="utf-8")
+
+            fake, _ = run_generator(root)
+
+            self.assertEqual(
+                fake.edit_paths,
+                [
+                    ("skills/café-資料/index.md", "skills/café-資料/SKILL.md"),
+                    ("skills/café-資料/references/naïve-資料.md", "skills/café-資料/references/naïve-資料.md"),
+                ],
+            )
 
     def test_rejects_symlinked_skill_directory_without_output(self):
         with TemporaryDirectory() as temporary_directory:
