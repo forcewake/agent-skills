@@ -1,13 +1,12 @@
 import io
+import multiprocessing
 import os
 from pathlib import Path
 import runpy
-import signal
 import sys
 from tempfile import TemporaryDirectory
 import types
 import unittest
-from contextlib import contextmanager
 from unittest.mock import patch
 
 
@@ -57,6 +56,36 @@ def run_generator(cwd, fake_mkdocs=None):
     return fake_mkdocs, globals_after_run
 
 
+def run_raced_generator(root_string, source_string, replacement, result_queue):
+    """Run a real generator process while swapping a resource at os.open time."""
+    root = Path(root_string)
+    source = Path(source_string)
+    external_target = root / "external-resource"
+    external_target.write_bytes(b"external content")
+    original_open = os.open
+    replaced = False
+
+    def open_after_replacement(path, flags, mode=0o777, *, dir_fd=None):
+        nonlocal replaced
+        if not replaced and path == source.name and dir_fd is not None:
+            replaced = True
+            source.unlink()
+            if replacement == "symlink":
+                source.symlink_to(external_target)
+            else:
+                os.mkfifo(source)
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    fake = FakeMkdocsGenFiles()
+    try:
+        with patch.object(os, "open", open_after_replacement):
+            run_generator(root, fake)
+    except BaseException as error:
+        result_queue.put(("raised", type(error).__name__, str(error), fake.writes, replaced))
+    else:
+        result_queue.put(("returned", "", "", fake.writes, replaced))
+
+
 class GenerateSkillPagesTests(unittest.TestCase):
     def make_skill(self, root, name="example", skill_text="---\nname: example\n---\n# Example\n"):
         skill_dir = root / "skills" / name
@@ -64,32 +93,21 @@ class GenerateSkillPagesTests(unittest.TestCase):
         (skill_dir / "SKILL.md").write_text(skill_text, encoding="utf-8")
         return skill_dir
 
-    def assert_rejected_without_output(self, root, offending_path):
-        with self.assertRaisesRegex(ValueError, str(offending_path)):
-            run_generator(root)
-        try:
-            fake, _ = run_generator(root)
-        except ValueError:
-            return
-        self.fail(f"expected {offending_path} to be rejected; wrote {fake.writes}")
-
-    @contextmanager
-    def bounded_timeout(self, seconds):
-        if not hasattr(signal, "setitimer"):
-            yield
-            return
-
-        def fail_on_timeout(_signum, _frame):
-            self.fail(f"generator did not finish within {seconds} seconds")
-
-        previous_handler = signal.getsignal(signal.SIGALRM)
-        signal.signal(signal.SIGALRM, fail_on_timeout)
-        signal.setitimer(signal.ITIMER_REAL, seconds)
-        try:
-            yield
-        finally:
-            signal.setitimer(signal.ITIMER_REAL, 0)
-            signal.signal(signal.SIGALRM, previous_handler)
+    def run_raced_generator_with_timeout(self, root, source, replacement):
+        context = multiprocessing.get_context("spawn")
+        results = context.Queue()
+        process = context.Process(
+            target=run_raced_generator,
+            args=(str(root), str(source), replacement, results),
+        )
+        process.start()
+        process.join(5)
+        if process.is_alive():
+            process.terminate()
+            process.join()
+            self.fail("generator did not finish within 5 seconds")
+        self.assertEqual(process.exitcode, 0)
+        return results.get(timeout=1)
 
     def test_publishes_recursive_references_and_assets_with_skill_frontmatter_removed(self):
         with TemporaryDirectory() as temporary_directory:
@@ -176,9 +194,8 @@ class GenerateSkillPagesTests(unittest.TestCase):
             unsafe_resource.symlink_to(unsafe_target)
 
             fake = FakeMkdocsGenFiles()
-            with self.bounded_timeout(2):
-                with self.assertRaisesRegex(ValueError, str(unsafe_resource)):
-                    run_generator(root, fake)
+            with self.assertRaisesRegex(ValueError, str(unsafe_resource)):
+                run_generator(root, fake)
 
             self.assertEqual(fake.writes, {})
             self.assertEqual(fake.write_order, [])
@@ -234,26 +251,6 @@ class GenerateSkillPagesTests(unittest.TestCase):
                 run_generator(root, fake)
             self.assertEqual(fake.writes, {})
 
-    def test_rejects_resource_when_helper_resolution_escapes_skill_root(self):
-        with TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
-            skill_dir = self.make_skill(root)
-            source = skill_dir / "references" / "guide.md"
-            source.parent.mkdir()
-            source.write_text("# Guide\n", encoding="utf-8")
-            _, generated = run_generator(root)
-            original_resolve = Path.resolve
-            outside = root / "outside.md"
-
-            def resolve_with_outside_source(path, *args, **kwargs):
-                if path == source:
-                    return outside
-                return original_resolve(path, *args, **kwargs)
-
-            with patch.object(Path, "resolve", resolve_with_outside_source):
-                with self.assertRaisesRegex(ValueError, str(source)):
-                    list(generated["iter_validated_resource_files"](skill_dir))
-
     def test_orders_resources_deterministically_and_never_reads_directories_as_bytes(self):
         with TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -287,6 +284,61 @@ class GenerateSkillPagesTests(unittest.TestCase):
                     "skills/example/assets/z.json",
                 ],
             )
+
+    def test_rejects_symlinked_top_level_skills_root_without_output(self):
+        with TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            external_root = root / "external-skills"
+            external_skill = external_root / "example"
+            external_skill.mkdir(parents=True)
+            (external_skill / "SKILL.md").write_text("# external\n", encoding="utf-8")
+            skills_link = root / "skills"
+            skills_link.symlink_to(external_root, target_is_directory=True)
+
+            fake = FakeMkdocsGenFiles()
+            with self.assertRaisesRegex(ValueError, str(skills_link)):
+                run_generator(root, fake)
+            self.assertEqual(fake.writes, {})
+
+    def test_captures_utf8_skill_and_binary_resource_without_pathname_reopens(self):
+        with TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            skill_dir = self.make_skill(root, skill_text="---\nname: café\n---\n# Пример\n")
+            resource = skill_dir / "assets" / "bytes.bin"
+            resource.parent.mkdir()
+            resource_bytes = b"\x00\xffcaf\xc3\xa9\n"
+            resource.write_bytes(resource_bytes)
+
+            with patch.object(Path, "read_text", side_effect=AssertionError("pathname read_text")), patch.object(
+                Path, "read_bytes", side_effect=AssertionError("pathname read_bytes")
+            ):
+                fake, _ = run_generator(root)
+
+            self.assertEqual(fake.writes["skills/example/index.md"], "# Пример\n".encode("utf-8"))
+            self.assertEqual(fake.writes["skills/example/assets/bytes.bin"], resource_bytes)
+
+    def test_rejects_resource_replaced_at_descriptor_open_boundary_without_output(self):
+        replacements = ["symlink"]
+        if hasattr(os, "mkfifo"):
+            replacements.append("fifo")
+
+        for replacement in replacements:
+            with self.subTest(replacement=replacement), TemporaryDirectory() as temporary_directory:
+                root = Path(temporary_directory)
+                skill_dir = self.make_skill(root)
+                source = skill_dir / "references" / "guide.md"
+                source.parent.mkdir()
+                source.write_text("# Guide\n", encoding="utf-8")
+
+                status, error_type, error_message, writes, replaced = self.run_raced_generator_with_timeout(
+                    root, source, replacement
+                )
+
+                self.assertTrue(replaced)
+                self.assertEqual(status, "raised")
+                self.assertEqual(error_type, "ValueError")
+                self.assertIn(str(source), error_message)
+                self.assertEqual(writes, {})
 
 
 if __name__ == "__main__":
