@@ -15,6 +15,21 @@ def reject_unsafe_path(path):
     raise ValueError(f"Unsafe skill path: {path}")
 
 
+def repository_relative_source_path(*components):
+    """Build a portable source path from validated lexical repository components."""
+    if not components:
+        reject_unsafe_path("empty repository source path")
+    for component in components:
+        if not isinstance(component, str) or not component or component in (".", ".."):
+            reject_unsafe_path(component)
+        if "/" in component or "\\" in component:
+            reject_unsafe_path(component)
+    source_path = "/".join(components)
+    if source_path.startswith("/") or ".." in source_path.split("/"):
+        reject_unsafe_path(source_path)
+    return source_path
+
+
 def require_secure_descriptor_support():
     required_constants = ("O_DIRECTORY", "O_NOFOLLOW", "O_NONBLOCK")
     missing_constants = [name for name in required_constants if not hasattr(os, name)]
@@ -157,7 +172,11 @@ def build_skill_plan(skills_root, skill_name, skill_fd):
                         captured_skill = read_captured_regular_file(child_fd, child_path)
                     elif child_relative_parts[0] in RESOURCE_ROOTS:
                         captured_resources[child_relative_parts[0]].append(
-                            (child_path, read_captured_regular_file(child_fd, child_path))
+                            (
+                                child_relative_parts,
+                                repository_relative_source_path("skills", skill_name, *child_relative_parts),
+                                read_captured_regular_file(child_fd, child_path),
+                            )
                         )
             finally:
                 os.close(child_fd)
@@ -167,8 +186,8 @@ def build_skill_plan(skills_root, skill_name, skill_fd):
     if captured_skill is None:
         reject_unsafe_path(skill_dir / "SKILL.md")
     return {
-        "skill_dir": skill_dir,
-        "skill_md": skill_dir / "SKILL.md",
+        "skill_name": skill_name,
+        "skill_source": repository_relative_source_path("skills", skill_name, "SKILL.md"),
         "body": strip_frontmatter(captured_skill.decode("utf-8")),
         "resources": [resource for resource_name in RESOURCE_ROOTS for resource in captured_resources[resource_name]],
     }
@@ -211,17 +230,15 @@ require_secure_descriptor_support()
 skill_plans = build_all_skill_plans(SKILLS_ROOT)
 
 for plan in skill_plans:
-    skill_dir = plan["skill_dir"]
-    skill_md = plan["skill_md"]
-    skill_page_root = f"skills/{skill_dir.relative_to(Path.cwd() / SKILLS_ROOT).as_posix()}"
+    skill_page_root = f"skills/{plan['skill_name']}"
     page = f"{skill_page_root}/index.md"
     with mkdocs_gen_files.open(page, "w") as file:
         file.write(plan["body"])
-    mkdocs_gen_files.set_edit_path(page, skill_md)
+    mkdocs_gen_files.set_edit_path(page, plan["skill_source"])
 
-    for resource, content in plan["resources"]:
-        page = f"{skill_page_root}/{resource.relative_to(skill_dir).as_posix()}"
+    for relative_parts, source_path, content in plan["resources"]:
+        page = f"{skill_page_root}/{'/'.join(relative_parts)}"
         with mkdocs_gen_files.open(page, "wb") as file:
             file.write(content)
-        if resource.suffix == ".md":
-            mkdocs_gen_files.set_edit_path(page, resource)
+        if relative_parts[-1].endswith(".md"):
+            mkdocs_gen_files.set_edit_path(page, source_path)

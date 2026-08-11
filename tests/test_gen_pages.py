@@ -168,10 +168,36 @@ class GenerateSkillPagesTests(unittest.TestCase):
             self.assertEqual(
                 fake.edit_paths,
                 [
-                    ("skills/example/index.md", skill_dir / "SKILL.md"),
-                    ("skills/example/references/nested/guide.md", guide),
+                    ("skills/example/index.md", Path("skills/example/SKILL.md")),
+                    ("skills/example/references/nested/guide.md", Path("skills/example/references/nested/guide.md")),
                 ],
             )
+
+    def test_edit_paths_are_normalized_repository_relative_source_paths(self):
+        with TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            skill_dir = self.make_skill(root)
+            reference = skill_dir / "references" / "nested" / "guide.md"
+            reference.parent.mkdir(parents=True)
+            reference.write_text("# Guide\n", encoding="utf-8")
+            asset = skill_dir / "assets" / "notes.md"
+            asset.parent.mkdir()
+            asset.write_text("# Asset notes\n", encoding="utf-8")
+
+            fake, _ = run_generator(root)
+
+            self.assertEqual(
+                fake.edit_paths,
+                [
+                    ("skills/example/index.md", Path("skills/example/SKILL.md")),
+                    ("skills/example/references/nested/guide.md", Path("skills/example/references/nested/guide.md")),
+                    ("skills/example/assets/notes.md", Path("skills/example/assets/notes.md")),
+                ],
+            )
+            for _, source in fake.edit_paths:
+                self.assertFalse(source.is_absolute())
+                self.assertNotIn("..", source.parts)
+                self.assertEqual(source.as_posix(), str(source))
 
     def test_accepts_skills_without_optional_resource_roots(self):
         with TemporaryDirectory() as temporary_directory:
@@ -181,7 +207,7 @@ class GenerateSkillPagesTests(unittest.TestCase):
             fake, _ = run_generator(root)
 
             self.assertEqual(fake.writes, {"skills/example/index.md": b"# Example\n"})
-            self.assertEqual(fake.edit_paths, [("skills/example/index.md", skill_dir / "SKILL.md")])
+            self.assertEqual(fake.edit_paths, [("skills/example/index.md", Path("skills/example/SKILL.md"))])
 
     def test_rejects_symlinked_skill_directory_without_output(self):
         with TemporaryDirectory() as temporary_directory:
