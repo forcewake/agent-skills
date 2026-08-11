@@ -2,10 +2,12 @@ import io
 import os
 from pathlib import Path
 import runpy
+import signal
 import sys
 from tempfile import TemporaryDirectory
 import types
 import unittest
+from contextlib import contextmanager
 from unittest.mock import patch
 
 
@@ -71,6 +73,24 @@ class GenerateSkillPagesTests(unittest.TestCase):
             return
         self.fail(f"expected {offending_path} to be rejected; wrote {fake.writes}")
 
+    @contextmanager
+    def bounded_timeout(self, seconds):
+        if not hasattr(signal, "setitimer"):
+            yield
+            return
+
+        def fail_on_timeout(_signum, _frame):
+            self.fail(f"generator did not finish within {seconds} seconds")
+
+        previous_handler = signal.getsignal(signal.SIGALRM)
+        signal.signal(signal.SIGALRM, fail_on_timeout)
+        signal.setitimer(signal.ITIMER_REAL, seconds)
+        try:
+            yield
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous_handler)
+
     def test_publishes_recursive_references_and_assets_with_skill_frontmatter_removed(self):
         with TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -135,9 +155,34 @@ class GenerateSkillPagesTests(unittest.TestCase):
             skill_md.unlink()
             skill_md.symlink_to(target)
 
+            fake = FakeMkdocsGenFiles()
             with self.assertRaisesRegex(ValueError, str(skill_md)):
-                fake, _ = run_generator(root)
-            self.assertEqual(fake.writes if "fake" in locals() else {}, {})
+                run_generator(root, fake)
+            self.assertEqual(fake.writes, {})
+
+    def test_preflights_all_skills_before_writing_when_later_skill_has_unsafe_resource(self):
+        with TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            valid_skill = self.make_skill(root, name="a-valid")
+            valid_resource = valid_skill / "references" / "nested" / "guide.md"
+            valid_resource.parent.mkdir(parents=True)
+            valid_resource.write_text("# Guide\n", encoding="utf-8")
+
+            invalid_skill = self.make_skill(root, name="z-invalid")
+            unsafe_target = root / "outside-guide.md"
+            unsafe_target.write_text("# unsafe\n", encoding="utf-8")
+            unsafe_resource = invalid_skill / "references" / "unsafe-guide.md"
+            unsafe_resource.parent.mkdir()
+            unsafe_resource.symlink_to(unsafe_target)
+
+            fake = FakeMkdocsGenFiles()
+            with self.bounded_timeout(2):
+                with self.assertRaisesRegex(ValueError, str(unsafe_resource)):
+                    run_generator(root, fake)
+
+            self.assertEqual(fake.writes, {})
+            self.assertEqual(fake.write_order, [])
+            self.assertEqual(fake.edit_paths, [])
 
     def test_rejects_symlinked_resource_roots_without_output(self):
         for resource_name in ("references", "assets"):
