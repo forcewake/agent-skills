@@ -1,0 +1,20 @@
+{
+  "terms": [
+    {
+      "term": "zunel",
+      "term_type": "noun",
+      "definition": "A synthetic generic noun used only to demonstrate a terminology-record format.",
+      "status": "Project-owned terminology pending governance.",
+      "approval": "No external approval; project governance decision pending.",
+      "version": "0.1"
+    },
+    {
+      "term": "ravex",
+      "term_type": "verb",
+      "definition": "A synthetic generic verb used only to demonstrate a terminology-record format.",
+      "status": "Project-owned terminology pending governance.",
+      "approval": "No external approval; project governance decision pending.",
+      "version": "0.1"
+    }
+  ]
+}
