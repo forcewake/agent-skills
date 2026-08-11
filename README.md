@@ -9,6 +9,7 @@ A curated collection of [Agent Skills](https://agentskills.io) for coding agents
 | Skill | Description |
 | --- | --- |
 | [mkdocs-material](skills/mkdocs-material/SKILL.md) | Material for MkDocs configuration, silent-rendering-failure fixes (task lists, autolinks, Mermaid, table overflow), built-HTML verification, and GitHub Pages deployment including private-repo domains and errored Pages builds |
+| [asd-ste100-compliance](skills/asd-ste100-compliance/SKILL.md) | Unofficial ASD-STE100 Issue 9 authoring/review aid; qualified review required. |
 
 ## Install
 

@@ -3,7 +3,7 @@ from pathlib import Path
 import re
 import unittest
 
-from yaml import safe_load
+from yaml import BaseLoader, safe_load, load
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -43,6 +43,17 @@ def assert_relative_package_links(test_case, source_file, text):
             candidate.resolve().relative_to(SKILL_ROOT.resolve())
         except ValueError as error:
             raise AssertionError(f'link escapes package: {destination}') from error
+
+
+def _flatten_nav(node):
+    if isinstance(node, dict):
+        for value in node.values():
+            yield from _flatten_nav(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from _flatten_nav(value)
+    else:
+        yield node
 
 
 class AsdSte100SkillPackageTests(unittest.TestCase):
@@ -180,6 +191,51 @@ class AsdSte100SkillPackageTests(unittest.TestCase):
         self.assertNotRegex(text, r'(?i)(password|api[_ -]?key|secret|token)\s*[:=]')
         self.assertNotRegex(text, r'[\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]')
         self.assertNotIn('ASD/STEMG certification', text)
+
+    def test_repository_catalog_and_docs_navigation_expose_the_skill(self):
+        description = 'Unofficial ASD-STE100 Issue 9 authoring/review aid; qualified review required.'
+        catalogues = (
+            (REPOSITORY_ROOT / 'README.md', 'skills/asd-ste100-compliance/SKILL.md'),
+            (REPOSITORY_ROOT / 'docs' / 'index.md', 'skills/asd-ste100-compliance/index.md'),
+        )
+        for catalogue_path, destination in catalogues:
+            expected_row = f'| [asd-ste100-compliance]({destination}) | {description} |'
+            rows = re.findall(rf'(?m)^{re.escape(expected_row)}$', catalogue_path.read_text(encoding='utf-8'))
+            self.assertEqual(rows, [expected_row], catalogue_path)
+
+        ignore_rules = (REPOSITORY_ROOT / '.gitignore').read_text(encoding='utf-8').splitlines()
+        self.assertEqual(ignore_rules.count('.hermes/'), 1)
+        self.assertFalse(any(rule.startswith('!.hermes') for rule in ignore_rules))
+
+        config = load((REPOSITORY_ROOT / 'mkdocs.yml').read_text(encoding='utf-8'), Loader=BaseLoader)
+        skills_nav = next(item['Skills'] for item in config['nav'] if 'Skills' in item)
+        asd_sections = [item['asd-ste100-compliance'] for item in skills_nav if 'asd-ste100-compliance' in item]
+        self.assertEqual(len(asd_sections), 1)
+        asd_nav = asd_sections[0]
+        self.assertEqual(asd_nav[0], 'skills/asd-ste100-compliance/index.md')
+        self.assertEqual(asd_nav[1], {'Official sources': 'skills/asd-ste100-compliance/references/official-sources.md'})
+        self.assertFalse(any(
+            isinstance(item, str) and item.endswith('.json')
+            for item in _flatten_nav(config['nav'])
+        ))
+
+    def test_docs_workflow_runs_discovery_before_unchanged_strict_deploy_flow(self):
+        workflow_path = REPOSITORY_ROOT / '.github' / 'workflows' / 'docs.yml'
+        workflow = load(workflow_path.read_text(encoding='utf-8'), Loader=BaseLoader)
+        self.assertEqual(workflow['on'], {'push': {'branches': ['main']}})
+        self.assertEqual(workflow['permissions'], {'contents': 'write'})
+
+        steps = workflow['jobs']['deploy']['steps']
+        runs = [step['run'] for step in steps if 'run' in step]
+        self.assertEqual(
+            runs,
+            [
+                'pip install -r requirements.txt',
+                'python3 -m unittest discover -v',
+                'mkdocs build --strict',
+                'mkdocs gh-deploy --force',
+            ],
+        )
 
 
 if __name__ == '__main__':
