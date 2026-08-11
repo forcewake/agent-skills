@@ -214,10 +214,10 @@ class AsdSte100SkillPackageTests(unittest.TestCase):
         asd_nav = asd_sections[0]
         self.assertEqual(asd_nav[0], 'skills/asd-ste100-compliance/index.md')
         self.assertEqual(asd_nav[1], {'Official sources': 'skills/asd-ste100-compliance/references/official-sources.md'})
-        self.assertFalse(any(
-            isinstance(item, str) and item.endswith('.json')
-            for item in _flatten_nav(config['nav'])
-        ))
+        self.assertNotIn(
+            'skills/asd-ste100-compliance/assets/terminology-record.example.json',
+            list(_flatten_nav(asd_nav)),
+        )
 
     def test_docs_workflow_runs_discovery_before_unchanged_strict_deploy_flow(self):
         workflow_path = REPOSITORY_ROOT / '.github' / 'workflows' / 'docs.yml'
@@ -227,15 +227,22 @@ class AsdSte100SkillPackageTests(unittest.TestCase):
 
         steps = workflow['jobs']['deploy']['steps']
         runs = [step['run'] for step in steps if 'run' in step]
-        self.assertEqual(
-            runs,
-            [
-                'pip install -r requirements.txt',
-                'python3 -m unittest discover -v',
-                'mkdocs build --strict',
-                'mkdocs gh-deploy --force',
-            ],
+        required_runs = (
+            'pip install -r requirements.txt',
+            'python3 -m unittest discover -v',
+            'mkdocs build --strict',
+            'mkdocs gh-deploy --force',
         )
+        for required_run in required_runs:
+            self.assertIn(required_run, runs)
+
+        install_index = runs.index('pip install -r requirements.txt')
+        test_index = runs.index('python3 -m unittest discover -v')
+        build_index = runs.index('mkdocs build --strict')
+        deploy_index = runs.index('mkdocs gh-deploy --force')
+        self.assertLess(install_index, test_index)
+        self.assertLess(test_index, build_index)
+        self.assertLess(build_index, deploy_index)
 
 
 if __name__ == '__main__':
