@@ -180,6 +180,36 @@ class AsdSte100SkillPackageTests(unittest.TestCase):
         for forbidden_claim in ('is certified', 'certified by', 'asd/stemg-approved', 'officially approved', 'guarantees compliance'):
             self.assertNotIn(forbidden_claim, lower_skill)
 
+    def test_skill_requires_authoritative_evidence_for_official_term_status(self):
+        skill_text = (SKILL_ROOT / 'SKILL.md').read_text(encoding='utf-8')
+        lower_skill = skill_text.lower()
+        for phrase in (
+            'do not infer or state official term approval or rejection',
+            'accessible authoritative source',
+            'status is unverified',
+            'qualified review',
+            'project glossary never confers asd/stemg approval',
+        ):
+            self.assertIn(phrase, lower_skill)
+        self.assertNotRegex(
+            lower_skill,
+            r'\bverify\b\s+is\s+(?:not\s+)?(?:asd[-/ ]*)?approved\b',
+        )
+
+    def test_skill_preserves_conditions_without_new_operational_actions(self):
+        skill_text = (SKILL_ROOT / 'SKILL.md').read_text(encoding='utf-8')
+        lower_skill = skill_text.lower()
+        for phrase in (
+            'condition or state is not an action',
+            'do not convert a source condition or state into a new action',
+            'check, verify, or measure command',
+            'do not add or suggest operational steps',
+            'explicit actor, order, values, scope, and prohibitions',
+            'review notes',
+            'without proposing a new action',
+        ):
+            self.assertIn(phrase, lower_skill)
+
     def test_new_package_text_has_no_private_material_or_hidden_controls(self):
         text = self.new_skill_text()
         lower_text = text.lower()
