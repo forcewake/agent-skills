@@ -31,7 +31,7 @@ Pin a release:
 # apm.yml
 dependencies:
   apm:
-  - git: forcewake/agent-skills#v1.0.0
+  - git: forcewake/agent-skills#v1.1.0
     skills:
       - mkdocs-material
 ```
