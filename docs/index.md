@@ -9,6 +9,7 @@ Each skill ships verified, failure-driven guidance: real symptoms mapped to exac
 | Skill | Use when |
 | --- | --- |
 | [mkdocs-material](skills/mkdocs-material/index.md) | Creating, fixing, or deploying MkDocs / Material for MkDocs sites: checkboxes render as literal `[ ]` text, bare URLs are not clickable, tables overflow, Mermaid shows as a code block, or GitHub Pages misbehaves |
+| [asd-ste100-compliance](skills/asd-ste100-compliance/index.md) | Unofficial ASD-STE100 Issue 9 authoring/review aid; qualified review required. |
 
 ## Install
 

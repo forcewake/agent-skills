@@ -72,3 +72,6 @@ nav:
       - mkdocs-material:
           - skills/mkdocs-material/index.md
           - GitHub Pages recipes: skills/mkdocs-material/references/github-pages.md
+      - asd-ste100-compliance:
+          - skills/asd-ste100-compliance/index.md
+          - Official sources: skills/asd-ste100-compliance/references/official-sources.md
