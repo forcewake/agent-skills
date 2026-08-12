@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+         <loc>https://forcewake.github.io/agent-skills/</loc>
+         <lastmod>2026-08-12</lastmod>
+    </url>
+    <url>
+         <loc>https://forcewake.github.io/agent-skills/skills/asd-ste100-compliance/</loc>
+         <lastmod>2026-08-12</lastmod>
+    </url>
+    <url>
+         <loc>https://forcewake.github.io/agent-skills/skills/asd-ste100-compliance/references/official-sources/</loc>
+         <lastmod>2026-08-12</lastmod>
+    </url>
+    <url>
+         <loc>https://forcewake.github.io/agent-skills/skills/mkdocs-material/</loc>
+         <lastmod>2026-08-12</lastmod>
+    </url>
+    <url>
+         <loc>https://forcewake.github.io/agent-skills/skills/mkdocs-material/references/github-pages/</loc>
+         <lastmod>2026-08-12</lastmod>
+    </url>
+</urlset>
