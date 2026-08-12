@@ -131,12 +131,16 @@ class AsdSte100SkillPackageTests(unittest.TestCase):
         self.assertEqual(actual_urls, expected_urls)
         self.assertEqual(len(re.findall(r'Accessed: 2026-08-11', sources_text)), 4)
         self.assertNotRegex(sources_text, r'(?m)^\s*https?://')
-        self.assertIn('Issue 9 was current on the access date; reconfirm before use.', sources_text)
-        self.assertIn('external-only', sources_text.lower())
-        self.assertIn('does not redistribute', sources_text.lower())
-        for phrase in ('PDF', 'controlled dictionary', 'checklist', 'logos', 'protected material'):
-            self.assertIn(phrase.lower(), sources_text.lower())
         lower_sources = sources_text.lower()
+        self.assertIn('official source indicated', lower_sources)
+        self.assertIn('issue 9 was current on the access date', lower_sources)
+        self.assertRegex(lower_sources, r'\b(?:reconfirm|confirm)\b.*\bcurrent issue\b.*\bbefore use\b')
+        for phrase in ('independent', 'unofficial', 'asd', 'stemg', 'do not endorse'):
+            self.assertIn(phrase, lower_sources)
+        self.assertIn('external-only', lower_sources)
+        self.assertIn('does not redistribute', lower_sources)
+        for phrase in ('PDF', 'controlled dictionary', 'checklist', 'logos', 'protected material'):
+            self.assertIn(phrase.lower(), lower_sources)
         for phrase in (
             'preserve facts', 'values', 'units', 'identifiers', 'commands', 'warnings',
             'sequence', 'actors', 'scope', 'uncertainty', 'procedure', 'description', 'safety',
